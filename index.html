@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HostelSafe – Anti-Ragging System</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--tx:#1a1d23;--mut:#667085;--bd:#e1e4e9;--pri:#2457d6;--red:#d92d20;--grn:#16794c;--amb:#b54708;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12141a;--card:#1c1f27;--tx:#eef0f4;--mut:#9aa3b2;--bd:#2d3240;--pri:#6c93ff;--red:#ff6b5e;--grn:#4fd08f;--amb:#f5a35c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12141a;--card:#1c1f27;--tx:#eef0f4;--mut:#9aa3b2;--bd:#2d3240;--pri:#6c93ff;--red:#ff6b5e;--grn:#4fd08f;--amb:#f5a35c;color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:12px}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+h1{font-size:18px;margin:0}h3{margin:0 0 6px;font-size:15px}
+nav{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px}
+nav button{white-space:nowrap}
+button{font:inherit;border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:8px 12px;border-radius:8px;cursor:pointer}
+button.on,button.pri{background:var(--pri);color:#fff;border-color:var(--pri)}
+button.red{background:var(--red);color:#fff;border-color:var(--red)}
+button.grn{background:var(--grn);color:#fff;border-color:var(--grn)}
+input,select,textarea{font:inherit;width:100%;padding:9px;border:1px solid var(--bd);border-radius:8px;background:var(--card);color:var(--tx);margin:4px 0 10px}
+label{font-size:13px;color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px}
+.card.open{border-color:var(--red);border-width:2px}.card.ack{border-color:var(--amb)}.card.ok{opacity:.8}
+.mut{color:var(--mut);font-size:13px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.bd{background:var(--red);color:#fff;border-radius:10px;padding:0 6px;font-size:12px}
+.tag{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;border:1px solid var(--bd)}
+.tag.r{color:var(--red);border-color:var(--red)}.tag.a{color:var(--amb);border-color:var(--amb)}.tag.g{color:var(--grn);border-color:var(--grn)}
+.sos{display:block;margin:14px auto;width:200px;height:200px;border-radius:50%;background:var(--red);color:#fff;font-size:44px;font-weight:800;border:8px solid rgba(217,45,32,.25)}
+.sos small{display:block;font-size:14px;font-weight:500}
+.toast{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));background:var(--tx);color:var(--bg);padding:12px;border-radius:10px;text-align:center;z-index:9}
+a.call{display:inline-block;padding:8px 12px;border:1px solid var(--bd);border-radius:8px;color:var(--pri);text-decoration:none;margin:0 6px 6px 0}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px;border-bottom:1px solid var(--bd)}
+.sc{overflow-x:auto}
+</style></head><body><div class="wrap">
+<header><h1>🛡️ HostelSafe</h1><div class="row" id="top"></div></header>
+<nav id="nav"></nav><main id="main"></main></div><div id="t"></div>
+<script>
+// ---- EDIT THESE ----
+const CONTACTS=[["Warden","+910000000000"],["Anti-ragging squad","+910000000001"],["UGC Anti-Ragging Helpline (24x7)","18001805522"]];
+const NIGHT=21;          // hour after which visits to other floors are flagged
+const MAXSEN=0.6;        // max share of seniors on a floor with first-years
+const ESC1=120000,ESC2=300000; // escalation steps in ms (2 min, 5 min)
+const FLOORS=["Ground floor","1st floor","2nd floor","3rd floor","4th floor"];
+// --------------------
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=t=>t?new Date(t).toLocaleString([],{dateStyle:"short",timeStyle:"short"}):"–";
+const age=ms=>{const s=Math.max(0,Math.floor(ms/1000));return Math.floor(s/60)+"m "+s%60+"s"};
+const lvl=ms=>ms<ESC1?"Level 1: Warden":ms<ESC2?"Level 2: Chief warden":"Level 3: Security + Principal";
+const isNight=t=>{const h=new Date(t).getHours();return h>=NIGHT||h<5};
+const today=()=>new Date().toLocaleDateString("en-CA");
+
+const API=location.pathname.replace(/[^/]*$/,"")+"api/";
+async function api(p,body){const o={credentials:"same-origin"};if(body!==undefined){o.method="POST";o.headers={"Content-Type":"application/json"};o.body=JSON.stringify(body)}
+  const r=await fetch(API+p,o);let j={};try{j=await r.json()}catch(e){}if(!r.ok)throw new Error(j.error||("Error "+r.status));return j}
+const S={alerts:[],reports:[],checkins:[],students:[],entries:[]};
+let me=null,isW=false,tab="sos",ac=null,mode="login";
+const toast=(m,ms)=>{const t=$("#t");t.innerHTML='<div class="toast">'+esc(m)+"</div>";setTimeout(()=>t.innerHTML="",ms||3500)};
+const calls=()=>CONTACTS.map(([n,p])=>`<a class="call" href="tel:${esc(p)}">📞 ${esc(n)}</a>`).join("");
+const openN=()=>S.alerts.filter(a=>a.status==="open").length;
+const fopts=v=>FLOORS.map(f=>`<option ${f===v?"selected":""}>${f}</option>`).join("");
+
+async function init(){
+  try{me=await api("me")}catch(e){me=null}
+  if(me){isW=me.role==="warden";tab=isW?"alerts":"sos";if(isW){await load();try{new EventSource(API+"stream").onmessage=load}catch(e){}setInterval(load,15000)}}
+  render();
+}
+async function load(){
+  try{Object.assign(S,await api("all"))}catch(e){return}
+  const f=document.activeElement;if(f&&f.closest&&f.closest("#main")&&/INPUT|TEXTAREA|SELECT/.test(f.tagName))return;
+  render();
+}
+const W=[["alerts","Alerts"],["reports","Reports"],["hot","Hotspots"],["check","Check-ins"],["rooms","Rooms"],["log","Entry log"],["evid","Evidence"]];
+const ST=[["sos","SOS"],["report","Report"],["check","Check-in"],["help","Help"]];
+function go(k){tab=k;render()}
+function render(){
+  const main=$("#main");
+  if(!me){$("#nav").innerHTML="";$("#top").innerHTML="";main.innerHTML=authForm()+'<div class="card"><h3>Emergency?</h3>'+calls()+"</div>";return}
+  $("#top").innerHTML=(isW?'<button onclick="snd()">🔔 Alarm</button>':"")+'<button onclick="logout()">Sign out</button>';
+  $("#nav").innerHTML=(isW?W:ST).map(([k,l])=>`<button class="${tab===k?"on":""}" onclick="go('${k}')">${l}${k==="alerts"&&isW&&openN()?` <span class="bd">${openN()}</span>`:""}</button>`).join("");
+  if(isW&&tab==="log"&&$("#lst")){$("#lst").innerHTML=logList();$("#sn").innerHTML=S.students.map(s=>`<option value="${esc(s.name)}">`).join("");return}
+  main.innerHTML=(isW?WT:STT)[tab]();
+}
+function authForm(){
+  if(mode==="login")return `<div class="card"><h3>Sign in</h3><label>Email</label><input id="ae" type="email" autocomplete="username"><label>Password</label><input id="ap" type="password" autocomplete="current-password">
+   <div class="row"><button class="pri" onclick="login()">Sign in</button><button onclick="mode='register';render()">New student? Register</button></div></div>`;
+  return `<div class="card"><h3>Student registration</h3><label>Full name</label><input id="rgn"><label>Email</label><input id="rge" type="email"><label>Password (8+ characters)</label><input id="rgp" type="password">
+   <label>Room number</label><input id="rgr"><label>Floor</label><select id="rgf">${fopts()}</select><label>Year</label><select id="rgy"><option value="first">First-year</option><option value="senior">Senior</option></select>
+   <label>Hostel code (given at check-in)</label><input id="rgc"><div class="row"><button class="pri" onclick="register()">Create account</button><button onclick="mode='login';render()">I have an account</button></div></div>`;
+}
+const v=i=>$("#"+i).value;
+async function login(){try{await api("login",{email:v("ae"),password:v("ap")});await init()}catch(e){toast(e.message)}}
+async function register(){try{await api("register",{name:v("rgn"),email:v("rge"),password:v("rgp"),room:v("rgr"),floor:v("rgf"),year:v("rgy"),code:v("rgc")});await init()}catch(e){toast(e.message)}}
+async function logout(){try{await api("logout",{})}catch(e){}location.reload()}
+
+// ---------- STUDENT ----------
+const STT={
+ sos:()=>`<button class="sos" onclick="sos()">SOS<small>I am in danger</small></button>
+  <label>Where are you right now? (optional)</label><input id="loc" placeholder="e.g. Ground floor, Room 7">
+  <p class="mut">Sent automatically: ${esc(me.name)}, Room ${esc(me.room)}, ${esc(me.floor)}. Alert reaches the warden dashboard instantly and escalates if nobody responds.</p>
+  <div class="card"><h3>Call directly</h3>${calls()}</div>`,
+ report:()=>`<div class="card"><h3>Anonymous ragging report</h3><p class="mut">Your name is not shown with this report. Only wardens and the anti-ragging committee can see it, never other students or the accused.</p>
+  <label>Senior’s name (if known)</label><input id="rn"><label>Senior’s room (if known)</label><input id="rr">
+  <label>When did it happen?</label><input id="rw" type="datetime-local"><label>What happened?</label><textarea id="rt" rows="5"></textarea>
+  <button class="pri" onclick="report()">Submit report</button></div>`,
+ check:()=>{const done=me.checkedToday;return `<div class="card"><h3>Daily check-in</h3>`+(done?'<p class="grn">✅ Done for today. Thank you.</p>':`<p>Are you okay today?</p><div class="row"><button class="grn" onclick="checkin(true)">Yes, I’m fine</button><button class="red" onclick="checkin(false)">No, I need help</button></div>`)+"</div>"},
+ help:()=>`<div class="card"><h3>Emergency contacts</h3>${calls()}<p class="mut">Ragging is a criminal offence. You do not need proof to report it.</p></div>
+  <div class="card"><h3>Your profile</h3>${esc(me.name)} · Room ${esc(me.room)} · ${esc(me.floor)} · ${me.year==="first"?"First-year":"Senior"}</div>`
+};
+async function sos(){
+  try{await api("alerts",{loc:($("#loc")||{}).value||""});
+    $("#main").innerHTML='<div class="card ok"><h3>✅ Alert sent</h3>The warden has been notified. Stay in a safe, public place if you can. If help does not arrive, call:<br><br>'+calls()+'<br><button onclick="render()">Back</button></div>'}
+  catch(e){toast("NOT SENT. Call the warden now. ("+e.message+")",8000)}
+}
+async function report(){
+  const text=v("rt").trim();if(!text)return toast("Please describe what happened");
+  try{await api("reports",{accused:v("rn"),room:v("rr"),when:v("rw"),text});$("#main").innerHTML='<div class="card ok"><h3>✅ Report submitted</h3>Thank you for speaking up. Your identity was not stored with this report.</div>'}catch(e){toast("Could not send: "+e.message)}
+}
+async function checkin(ok){try{await api("checkins",{ok});me.checkedToday=true;toast(ok?"Thanks! Stay safe.":"Counselor has been notified.");render()}catch(e){toast("Could not save: "+e.message)}}
+
+// ---------- WARDEN ----------
+const empty=m=>`<div class="card mut">${m}</div>`;
+const WT={
+ alerts:()=>{const l=[...S.alerts].sort((a,b)=>b.t-a.t);
+  return l.length?l.map(a=>{const op=a.status==="open";
+   return `<div class="card ${op?"open":a.status==="ack"?"ack":"ok"}"><div class="row"><b>${esc(a.name)}</b> · Room ${esc(a.room)}, ${esc(a.floor)}
+   <span class="tag ${op?"r":a.status==="ack"?"a":"g"}">${op?"OPEN":a.status==="ack"?"ACKNOWLEDGED":"RESOLVED"}</span></div>
+   ${a.loc?`<div>📍 Currently at: <b>${esc(a.loc)}</b></div>`:""}<div class="mut">${fmt(a.t)}${op?` · waiting <span class="age" data-t="${a.t}"></span> · <b class="lv" data-t="${a.t}"></b>`:""}</div>
+   ${a.status!=="resolved"?`<div class="row" style="margin-top:8px">${op?`<button class="pri" onclick="act('${a.id}','ack')">Acknowledge</button>`:""}
+   <input id="n_${a.id}" placeholder="Resolution note" style="flex:1;margin:0"><button class="grn" onclick="act('${a.id}','res')">Resolve</button></div>`:a.note?`<div class="mut">Note: ${esc(a.note)}</div>`:""}</div>`}).join(""):empty("No alerts yet.")},
+ reports:()=>{const l=[...S.reports].sort((a,b)=>b.t-a.t);
+  return l.length?l.map(r=>`<div class="card"><div class="row"><b>${esc(r.accused||"Unknown senior")}</b>${r.room?` · Room ${esc(r.room)}`:""}<span class="tag ${r.status==="new"?"r":"g"}">${r.status}</span></div>
+   <div class="mut">Incident: ${r.when?fmt(r.when):"not stated"} · Reported ${fmt(r.t)} · Reporter hidden</div><p>${esc(r.text)}</p>
+   ${r.status==="new"?`<button onclick="review('${r.id}')">Mark reviewed</button>`:""}</div>`).join(""):empty("No reports yet.")},
+ hot:()=>{
+  const cnt=(arr,f)=>{const m={};arr.forEach(x=>{const k=f(x);if(k)m[k]=(m[k]||0)+1});return Object.entries(m).filter(e=>e[1]>=2).sort((a,b)=>b[1]-a[1])};
+  const sec=(title,rows,unit)=>`<div class="card"><h3>${title}</h3>`+(rows.length?rows.map(([k,n])=>`<div class="row"><span class="tag ${n>=3?"r":"a"}">${n>=3?"HOTSPOT":"WATCH"}</span> ${esc(k)} · ${n} ${unit}</div>`).join(""):'<span class="mut">Nothing flagged.</span>')+"</div>";
+  return sec("Seniors named repeatedly",cnt(S.reports,r=>(r.accused||"").trim().toLowerCase()),"reports")+sec("Rooms named repeatedly",cnt(S.reports,r=>(r.room||"").trim().toLowerCase()&&"Room "+r.room.trim()),"reports")+sec("Floors with night-time SOS alerts",cnt(S.alerts.filter(a=>isNight(a.t)),a=>a.floor),"night alerts")+'<p class="mut">2 matches = watch, 3 or more = hotspot.</p>'},
+ check:()=>{const d=today(),firsts=S.students.filter(s=>s.year==="first"),did=new Set(S.checkins.filter(c=>c.date===d).map(c=>c.id));
+  const need=S.checkins.filter(c=>!c.ok&&!c.done).sort((a,b)=>b.t-a.t),miss=firsts.filter(s=>!did.has(s.id));
+  return `<div class="card"><h3>Needs counselor</h3>`+(need.length?need.map(c=>`<div class="row" style="margin-bottom:6px"><span class="tag r">NOT OK</span> <b>${esc(c.name)}</b> · Room ${esc(c.room)} · ${fmt(c.t)} <button onclick="done('${c.id}','${c.date}')">Counselled</button></div>`).join(""):'<span class="mut">No one needs follow-up.</span>')+`</div>
+  <div class="card"><h3>First-years not checked in today (${miss.length}/${firsts.length})</h3>${miss.length?miss.map(s=>esc(s.name)+" (Room "+esc(s.room)+")").join(", "):'<span class="mut">Everyone has checked in.</span>'}</div>`},
+ rooms:()=>{const f={};S.students.forEach(s=>{const o=f[s.floor]=f[s.floor]||{a:0,b:0};s.year==="first"?o.a++:o.b++});
+  const k=Object.keys(f).sort((a,b)=>FLOORS.indexOf(a)-FLOORS.indexOf(b));
+  return `<div class="card"><h3>Allocation check</h3><p class="mut">Flags floors where seniors exceed ${MAXSEN*100}% while first-years live there. Use it before allocating new bookings.</p>`+(k.length?`<div class="sc"><table><tr><th>Floor</th><th>First-years</th><th>Seniors</th><th>Status</th></tr>`+k.map(x=>{const o=f[x],p=o.b/(o.a+o.b),bad=o.a>0&&p>=MAXSEN;return `<tr><td>${esc(x)}</td><td>${o.a}</td><td>${o.b}</td><td><span class="tag ${bad?"r":"g"}">${bad?"Seniors dominate ("+Math.round(p*100)+"%)":"OK"}</span></td></tr>`}).join("")+"</table></div>":'<span class="mut">No student profiles yet.</span>')+"</div>"},
+ log:()=>`<div class="card"><h3>Log a late-night visit</h3><p class="mut">Guard or warden records who went where. Flags first-years on other floors after ${NIGHT}:00 and repeated visits to one room.</p>
+  <label>Student name</label><input id="en" list="sn"><datalist id="sn">${S.students.map(s=>`<option value="${esc(s.name)}">`).join("")}</datalist>
+  <label>Floor visited</label><select id="ef">${fopts()}</select><label>Room visited</label><input id="er"><button class="pri" onclick="addEntry()">Add entry</button></div><div id="lst">${logList()}</div>`,
+ evid:()=>{const l=[...S.alerts].sort((a,b)=>b.t-a.t);
+  return `<div class="card"><div class="row"><h3 style="margin:0;flex:1">Evidence trail</h3><button onclick="exp()">Export CSV</button></div><div class="sc"><table><tr><th>Raised</th><th>Student</th><th>Response</th><th>Status</th><th>Log</th></tr>`+l.map(a=>`<tr><td>${fmt(a.t)}</td><td>${esc(a.name)}<br>Rm ${esc(a.room)}</td><td>${a.ackT?age(a.ackT-a.t):"none"}</td><td>${a.status}</td><td>${(a.log||[]).map(e=>fmt(e.t)+" "+esc(e.a)).join("<br>")}</td></tr>`).join("")+"</table></div></div>"}
+};
+function logList(){
+  const l=[...S.entries].sort((a,b)=>b.t-a.t);if(!l.length)return empty("No entries yet.");
+  return l.map(e=>{const s=S.students.find(x=>(x.name||"").toLowerCase()===e.name.toLowerCase()),fl=[];
+   if(s&&s.year==="first"&&s.floor!==e.floor&&isNight(e.t))fl.push("First-year on another floor at night");
+   const n=S.entries.filter(x=>x.name.toLowerCase()===e.name.toLowerCase()&&x.room.toLowerCase()===e.room.toLowerCase()).length;if(n>=2)fl.push("Called to this room "+n+" times");
+   return `<div class="card ${fl.length?"open":""}"><b>${esc(e.name)}</b> → ${esc(e.floor)}, Room ${esc(e.room)}<div class="mut">${fmt(e.t)}</div>${fl.map(f=>`<span class="tag r">⚠ ${f}</span> `).join("")}</div>`}).join("")}
+async function addEntry(){const n=v("en").trim(),r=v("er").trim();if(!n||!r)return toast("Enter name and room");
+  try{await api("entries",{name:n,floor:v("ef"),room:r});$("#en").value=$("#er").value="";load()}catch(e){toast(e.message)}}
+const wact=async(p,b)=>{try{await api(p,b||{});load()}catch(e){toast("Failed: "+e.message)}};
+const review=id=>wact("reports/"+id+"/review"),done=(u,d)=>wact("checkins/"+u+"/"+d+"/done");
+const act=(id,k)=>wact("alerts/"+id+"/"+(k==="ack"?"ack":"resolve"),{note:(($("#n_"+id)||{}).value||"").trim()});
+function exp(){location.href=API+"evidence.csv"}
+function snd(){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();toast("Alarm sound enabled")}catch(e){}}
+function beep(){if(!ac)return;const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=880;g.gain.value=.25;o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+.4)}
+setInterval(()=>{
+  const now=Date.now();
+  document.querySelectorAll(".age").forEach(e=>e.textContent=age(now-e.dataset.t));
+  document.querySelectorAll(".lv").forEach(e=>e.textContent=lvl(now-e.dataset.t));
+  if(isW&&S.alerts.some(a=>a.status==="open")){beep();document.title="🚨 SOS ("+openN()+")"}else document.title="HostelSafe – Anti-Ragging System";
+},1000);
+init();
+</script></body></html>
